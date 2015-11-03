@@ -2,6 +2,9 @@ package com.google.routeplanning;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.Button;
 import android.widget.Toast;
 
 import com.baidu.location.BDLocation;
@@ -17,6 +20,7 @@ import com.baidu.mapapi.map.BitmapDescriptorFactory;
 import com.baidu.mapapi.map.MapStatusUpdate;
 import com.baidu.mapapi.map.MapStatusUpdateFactory;
 import com.baidu.mapapi.map.MapView;
+import com.baidu.mapapi.map.MyLocationConfiguration;
 import com.baidu.mapapi.map.MyLocationData;
 import com.baidu.mapapi.model.LatLng;
 import com.baidu.mapapi.overlayutil.WalkingRouteOverlay;
@@ -29,16 +33,20 @@ import com.baidu.mapapi.search.route.TransitRouteResult;
 import com.baidu.mapapi.search.route.WalkingRoutePlanOption;
 import com.baidu.mapapi.search.route.WalkingRouteResult;
 
-public class MainActivity extends Activity implements BDLocationListener{
+public class MainActivity extends Activity implements BDLocationListener,OnClickListener{
 
 	private MapView mapView;
 	private boolean useDefaultIcon;
+	private boolean isFirst=true;
 	private BaiduMap mBaiduMap;
+	private RoutePlanSearch mSearch;
 	private LatLng stlatlng;
 	private LatLng edlatlng;
+	private LatLng latlng;
+	private Button bt_satellite,bt_normal,bt_location,bt_clear;
 	// 定位相关
 	private LocationClient mLocClient;
-	private boolean isFirst=true;
+	
 
 	// 自定义起点终点 图标：
 
@@ -79,24 +87,23 @@ public class MainActivity extends Activity implements BDLocationListener{
 
 	@Override
 	public void onReceiveLocation(BDLocation location) {
-
-		stlatlng = new LatLng(location.getLatitude(), location.getLongitude());
+		latlng = new LatLng(location.getLatitude(), location.getLongitude());
+		if (isFirst) {
+        	stlatlng = new LatLng(location.getLatitude(), location.getLongitude());
+        	isFirst = false;
 		if (location == null || mapView == null)
 			return;
-		if (isFirst) {
+		    // 开启定位图层  
+		    mBaiduMap.setMyLocationEnabled(true); 
 			MyLocationData locData = new MyLocationData.Builder()
 					.accuracy(location.getRadius())
 					// 此处设置开发者获取到的方向信息，顺时针0-360
 					.direction(90).latitude(location.getLatitude())
 					.longitude(location.getLongitude()).build();
 			mBaiduMap.setMyLocationData(locData);
-			LatLng ll1 = new LatLng(location.getLatitude(),
-					location.getLongitude());
-			MapStatusUpdate u1 = MapStatusUpdateFactory.newLatLng(ll1);
-			mBaiduMap.animateMapStatus(u1);
-			isFirst = false;
-		}
-
+			requestLoc(latlng);
+        }
+        
 	}
 
 	@Override
@@ -104,6 +111,14 @@ public class MainActivity extends Activity implements BDLocationListener{
 		super.onCreate(savedInstanceState);
 		SDKInitializer.initialize(getApplicationContext());
 		setContentView(R.layout.activity_main);
+		bt_normal = (Button) findViewById(R.id.button1);
+		bt_normal.setOnClickListener(this);
+		bt_satellite = (Button) findViewById(R.id.button2);
+		bt_satellite.setOnClickListener(this);
+		bt_location = (Button) findViewById(R.id.button3);
+		bt_location.setOnClickListener(this);
+		bt_clear = (Button) findViewById(R.id.button4);
+		bt_clear.setOnClickListener(this);
 		// 初始化mapview对象，并且设置显示缩放控件
 		mapView = (MapView) findViewById(R.id.bmapsView);
 		mapView.showZoomControls(true);
@@ -115,11 +130,11 @@ public class MainActivity extends Activity implements BDLocationListener{
 		option.setOpenGps(true);// 是否打开gps
 		option.setLocationMode(LocationMode.Hight_Accuracy);//定位模式设置
 		option.setCoorType("bd09ll"); // 设置坐标类型
-		option.setScanSpan(1000); //1000毫秒更新一次位置
+		option.setScanSpan(5000); //5秒更新一次位置
 		mLocClient.setLocOption(option);
 		mLocClient.start();
 
-		final RoutePlanSearch mSearch = RoutePlanSearch.newInstance();
+		mSearch = RoutePlanSearch.newInstance();
 
 		final OnGetRoutePlanResultListener listener = new OnGetRoutePlanResultListener() {
 			public void onGetWalkingRouteResult(WalkingRouteResult result) {
@@ -159,8 +174,6 @@ public class MainActivity extends Activity implements BDLocationListener{
 
 					overlay.addToMap();
 
-					overlay.zoomToSpan();
-
 				}
 			}
 
@@ -174,6 +187,8 @@ public class MainActivity extends Activity implements BDLocationListener{
 		};
 
 		mBaiduMap = mapView.getMap();
+//		MyLocationConfiguration.LocationMode mode = MyLocationConfiguration.LocationMode.COMPASS;
+//		mBaiduMap.setMyLocationConfigeration(new MyLocationConfiguration(mode, false, null));
 		MapStatusUpdate mapStatusUpdate = MapStatusUpdateFactory.zoomBy(7);
 		mBaiduMap.animateMapStatus(mapStatusUpdate);
 		mBaiduMap.setOnMapLongClickListener(new OnMapLongClickListener() {
@@ -186,10 +201,39 @@ public class MainActivity extends Activity implements BDLocationListener{
 				PlanNode edNode = PlanNode.withLocation(edlatlng);
 				mSearch.walkingSearch(new WalkingRoutePlanOption().from(stNode)
 						.to(edNode));
+				stlatlng = edlatlng;
 			}
 		});
 
 	}
 
+	@Override
+	public void onClick(View v) {
+		int id = v.getId();
+		switch (id) {
+		case R.id.button1:
+			mBaiduMap.setMapType(BaiduMap.MAP_TYPE_NORMAL);
+			break;
+		case R.id.button2:
+			mBaiduMap.setMapType(BaiduMap.MAP_TYPE_SATELLITE);
+			break;
+		case R.id.button3:
+			requestLoc(latlng);
+			break;
+		case R.id.button4:
+			requestLoc(latlng);
+			mBaiduMap.clear();
+			stlatlng = latlng;
+			break;
+        default:
+			break;
+		}
+		
+	}
+
+	public void requestLoc(LatLng latlng){
+		MapStatusUpdate update = MapStatusUpdateFactory.newLatLng(latlng);
+		mBaiduMap.animateMapStatus(update);
+	}
 
 }
